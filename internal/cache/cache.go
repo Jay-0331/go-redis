@@ -119,27 +119,32 @@ func (store *Store) AddToStream(streamKey, streamId string, data []string) (stri
 	if streamId == "0-0" {
 		return "", fmt.Errorf("ERR The ID specified in XADD must be greater than 0-0")
 	}
-	streamIdParts := strings.Split(streamId, "-")
 	streamData := store.data[streamKey]
-	lastIdx := len(streamData.value.Stream) - 1
-	if streamIdParts[1] == "*" {
-		prevIdParts := []string{""}
-		if lastIdx > 0 {
-			prevIdParts = strings.Split(streamData.value.Stream[lastIdx].Id, "-")
-		}
-		if streamIdParts[0] == prevIdParts[0] {
-			lastId, _ := strconv.Atoi(prevIdParts[1])
-			streamId = fmt.Sprintf("%s-%d", streamIdParts[0], lastId+1)
-		} else {
-			seqNumber := 0
-			if streamIdParts[0] == "0" {
-				seqNumber = 1
+	if streamId == "*" {
+		timestamp := int(time.Now().UnixMilli())
+		streamId = fmt.Sprintf("%d-%d", timestamp, 0)
+	} else {
+		streamIdParts := strings.Split(streamId, "-")
+		lastIdx := len(streamData.value.Stream) - 1
+		if streamIdParts[1] == "*" {
+			prevIdParts := []string{""}
+			if lastIdx > 0 {
+				prevIdParts = strings.Split(streamData.value.Stream[lastIdx].Id, "-")
 			}
-			streamId = fmt.Sprintf("%s-%d", streamIdParts[0], seqNumber)
+			if streamIdParts[0] == prevIdParts[0] {
+				lastId, _ := strconv.Atoi(prevIdParts[1])
+				streamId = fmt.Sprintf("%s-%d", streamIdParts[0], lastId+1)
+			} else {
+				seqNumber := 0
+				if streamIdParts[0] == "0" {
+					seqNumber = 1
+				}
+				streamId = fmt.Sprintf("%s-%d", streamIdParts[0], seqNumber)
+			}
 		}
-	}
-	if lastIdx > 0 && streamData.value.Stream[lastIdx].Id >= streamId {
-		return "", fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+		if lastIdx > 0 && streamData.value.Stream[lastIdx].Id >= streamId {
+			return "", fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+		}
 	}
 	streamData.value.Stream = append(streamData.value.Stream, streamType{
 		Id:   streamId,
