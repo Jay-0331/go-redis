@@ -52,15 +52,17 @@ func ToStreamRESPArray(arr []cache.StreamType) string {
 	return resp
 }
 
-func ToRESPStreamWithName(streamName string, stream []cache.StreamType) string {
-	resp := "*1" + CLRF
-	resp += "*2" + CLRF
-	resp += ToRESPBulkString(streamName)
-	resp += "*" + strconv.Itoa(len(stream)) + CLRF
-	for _, stream := range stream {
-		resp += "*" + "2" + CLRF
-		resp += ToRESPBulkString(stream.Id)
-		resp += ToRESPArray(stream.Data)
+func ToRESPStreamWithName(streamMap map[string][]cache.StreamType) string {
+	resp := "*" + strconv.Itoa(len(streamMap)) + CLRF
+	for streamName, stream := range streamMap {
+		resp += "*2" + CLRF
+		resp += ToRESPBulkString(streamName)
+		resp += "*" + strconv.Itoa(len(stream)) + CLRF
+		for _, stream := range stream {
+			resp += "*" + "2" + CLRF
+			resp += ToRESPBulkString(stream.Id)
+			resp += ToRESPArray(stream.Data)
+		}
 	}
 	return resp
 }

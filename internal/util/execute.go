@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/codecrafters-io/redis-starter-go/internal/cache"
 	"github.com/codecrafters-io/redis-starter-go/internal/command"
 	"github.com/codecrafters-io/redis-starter-go/internal/redis"
 	"github.com/codecrafters-io/redis-starter-go/internal/resp"
@@ -15,7 +17,7 @@ import (
 var ackChan = make(chan bool, 1)
 
 func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
-	cache := redis.GetCache()
+	c := redis.GetCache()
 	switch cmd.GetName() {
 	case command.PING:
 		conn.Write([]byte(resp.ToRESPSimpleString("PONG")))
@@ -24,7 +26,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		conn.Write([]byte(resp.ToRESPBulkString(cmd.GetArg(0))))
 		return
 	case command.TYPE:
-		valueType := cache.GetType(cmd.GetArg(0))
+		valueType := c.GetType(cmd.GetArg(0))
 		switch valueType {
 		case "string":
 			conn.Write([]byte(resp.ToRESPSimpleString("string")))
@@ -35,31 +37,43 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		}
 	case command.XADD:
 		go propagate(redis, cmd)
-		cache.SetStream(cmd.GetArg(0))
-		id, err := cache.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
+		c.SetStream(cmd.GetArg(0))
+		id, err := c.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
 		if err != nil {
 			conn.Write([]byte(resp.ToRESPError(err.Error())))
 			return
 		}
 		conn.Write([]byte(resp.ToRESPSimpleString(id)))
 	case command.XRANGE:
-		stream := cache.GetStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArg(2))
+		stream := c.GetStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArg(2))
 		if len(stream) == 0 {
 			conn.Write([]byte(resp.ToRESPNullArray()))
 			return
 		}
 		conn.Write([]byte(resp.ToStreamRESPArray(stream)))
 	case command.XREAD:
-		stream := cache.GetStream(cmd.GetArg(1), cmd.GetArg(2), "+")
-		if len(stream) == 0 {
+		i := 0
+		for _, arg := range cmd.GetArgs() {
+			if strings.Contains(arg, "-") {
+				break
+			}
+			i++
+		}
+		streamMap := make(map[string][]cache.StreamType)
+		for j := 1; j < i; j++ {
+			stream := c.GetStream(cmd.GetArg(j), cmd.GetArg(i + j - 1), "+")
+			streamMap[cmd.GetArg(j)] = stream
+		}
+		if len(streamMap) == 0 {
 			conn.Write([]byte(resp.ToRESPNullArray()))
 			return
 		}
-		conn.Write(([]byte(resp.ToRESPStreamWithName(cmd.GetArg(1), stream))))
+		resp := resp.ToRESPStreamWithName(streamMap)
+		conn.Write(([]byte(resp)))
 	case command.KEYS:
-		keys := cache.Keys()
+		keys := c.Keys()
 		fmt.Println(keys)
-		conn.Write([]byte(resp.ToRESPArray(cache.Keys())))
+		conn.Write([]byte(resp.ToRESPArray(c.Keys())))
 	case command.SET:
 		go propagate(redis, cmd)
 		if len(cmd.GetArgs()) > 2 && cmd.GetArg(2) == "px" {
@@ -67,17 +81,17 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			if err != nil {
 				conn.Write([]byte(resp.ToRESPError(err.Error())))
 			}
-			cache.Set(cmd.GetArg(0), cmd.GetArg(1), int64(px))
+			c.Set(cmd.GetArg(0), cmd.GetArg(1), int64(px))
 			conn.Write([]byte(resp.ToRESPSimpleString("OK")))
 		} else if len(cmd.GetArgs()) == 3 {
 			conn.Write([]byte(resp.ToRESPError("Invalid Command")))
 			return
 		} else {
-			cache.Set(cmd.GetArg(0), cmd.GetArg(1), 0)
+			c.Set(cmd.GetArg(0), cmd.GetArg(1), 0)
 			conn.Write([]byte(resp.ToRESPSimpleString("OK")))
 		}
 		case command.GET:
-			value := cache.Get(cmd.GetArg(0))
+			value := c.Get(cmd.GetArg(0))
 			if value != "" {
 				conn.Write([]byte(resp.ToRESPBulkString(value)))
 			} else {
@@ -174,7 +188,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 }
 
 func ExecuteReplica(redis redis.Node, cmd command.Command) {
-	cache := redis.GetCache()
+	c := redis.GetCache()
 	switch cmd.GetName() {
 	case command.PING:
 		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
@@ -186,11 +200,11 @@ func ExecuteReplica(redis redis.Node, cmd command.Command) {
 			if err != nil {
 				return
 			}
-			cache.Set(cmd.GetArg(0), cmd.GetArg(1), int64(px))
+			c.Set(cmd.GetArg(0), cmd.GetArg(1), int64(px))
 		} else if len(cmd.GetArgs()) == 3 {
 			return
 		} else {
-			cache.Set(cmd.GetArg(0), cmd.GetArg(1), 0)
+			c.Set(cmd.GetArg(0), cmd.GetArg(1), 0)
 		}
 		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
 		return

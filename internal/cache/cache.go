@@ -183,7 +183,6 @@ func (store *Store) GetStream(key, start, end string) []StreamType {
 	startIdx := 0
 	endIdx := len(streamData.value.Stream) - 1
 	for idx, stream := range streamData.value.Stream {
-		fmt.Println(stream.Id)
 		if stream.Id == start {
 			startIdx = idx
 		}
