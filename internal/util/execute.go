@@ -36,12 +36,12 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 	case command.XADD:
 		go propagate(redis, cmd)
 		cache.SetStream(cmd.GetArg(0))
-		err := cache.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
+		id, err := cache.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
 		if err != nil {
 			conn.Write([]byte(resp.ToRESPError(err.Error())))
 			return
 		}
-		conn.Write([]byte(resp.ToRESPSimpleString(cmd.GetArg(1))))
+		conn.Write([]byte(resp.ToRESPSimpleString(id)))
 	case command.KEYS:
 		keys := cache.Keys()
 		fmt.Println(keys)
