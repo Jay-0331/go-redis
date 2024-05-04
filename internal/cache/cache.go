@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -12,7 +13,7 @@ type Cache interface {
 	Keys() []string
 	GetType(key string) string
 	SetStream(key string)
-	AddToStream(streamKey, streamId, key, value string)
+	AddToStream(streamKey, streamId string, data []string) error
 }
 
 type Store struct {
@@ -20,9 +21,14 @@ type Store struct {
 	data map[string]storeData
 }
 
+type streamType struct {
+	Id string
+	Data []string
+}
+
 type item struct {
 	String string
-	Stream map[string]storeData
+	Stream []streamType
 }
 
 type storeData struct {
@@ -95,21 +101,34 @@ func (store *Store) GetType(key string) string {
 func (store *Store) SetStream(key string) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if _, ok := store.data[key]; ok {
+		return
+	}
 	store.data[key] = storeData{
-		value: item{Stream: make(map[string]storeData)},
+		value: item{Stream: []streamType{}},
 		dataType: "stream",
 		ttl: 0,
 	}
 }
 
-func (store *Store) AddToStream(streamKey, streamId, key, value string) {
+func (store *Store) AddToStream(streamKey, streamId string, data []string) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.data[streamKey].value.Stream[streamId] = storeData{
-		value: item{String: value},
-		dataType: "string",
-		ttl: 0,
+	if streamId == "0-0" {
+		return fmt.Errorf("ERR The ID specified in XADD must be greater than 0-0")
 	}
+	streamData := store.data[streamKey]
+	lastIdx := len(streamData.value.Stream) - 1
+	if lastIdx > 0 && streamData.value.Stream[lastIdx].Id >= streamId {
+		return fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+	}	
+	streamData.value.Stream = append(streamData.value.Stream, streamType{
+		Id:   streamId,
+		Data: data,
+	})
+	store.data[streamKey] = streamData
+	
+	return nil
 }
 
 func (store *Store) cleanUp() {
