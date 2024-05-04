@@ -24,12 +24,22 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		conn.Write([]byte(resp.ToRESPBulkString(cmd.GetArg(0))))
 		return
 	case command.TYPE:
-		value := cache.Get(cmd.GetArg(0))
-		if value != "" {
+		valueType := cache.GetType(cmd.GetArg(0))
+		switch valueType {
+		case "string":
 			conn.Write([]byte(resp.ToRESPSimpleString("string")))
-		} else {
+		case "stream":
+			conn.Write([]byte(resp.ToRESPSimpleString("stream")))
+		default:
 			conn.Write([]byte(resp.ToRESPSimpleString("none")))
 		}
+	case command.XADD:
+		go propagate(redis, cmd)
+		cache.SetStream(cmd.GetArg(0))
+		for i := 2; i < len(cmd.GetArgs()); i += 2 {
+			cache.AddToStream(cmd.GetArg(0), cmd.GetArg(1) ,cmd.GetArg(i), cmd.GetArg(i + 1))
+		}
+		conn.Write([]byte(resp.ToRESPSimpleString(cmd.GetArg(1))))
 	case command.KEYS:
 		keys := cache.Keys()
 		fmt.Println(keys)

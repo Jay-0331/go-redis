@@ -75,11 +75,6 @@ func NewNode() Node {
 		fileName: *fileName,
 		dir: *dir,
 	}
-	file, _ := os.Open(rdbFile.dir + "/" + rdbFile.fileName)
-	buf := make([]byte, 1024)
-	file.Read(buf)
-	fmt.Println("RDB file content: ", string(buf))
-	file.Close()
 	masterPort := flag.Arg(0)
 	addr := "0.0.0.0:" + *port
 	l, err := net.Listen("tcp", addr)

@@ -12,4 +12,5 @@ const (
 	CONFIG = "config"
 	KEYS = "keys"
 	TYPE = "type"
+	XADD = "xadd"
 )

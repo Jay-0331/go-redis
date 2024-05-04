@@ -10,6 +10,9 @@ type Cache interface {
 	Set(key, value string, px int64)
 	Del(key string)
 	Keys() []string
+	GetType(key string) string
+	SetStream(key string)
+	AddToStream(streamKey, streamId, key, value string)
 }
 
 type Store struct {
@@ -19,7 +22,7 @@ type Store struct {
 
 type item struct {
 	String string
-	Stream map[string]map[string]string
+	Stream map[string]storeData
 }
 
 type storeData struct {
@@ -40,25 +43,25 @@ func NewCache() Cache {
 	return s
 }
 
-func (d *Store) Get(key string) string {
-	d.cleanUp()
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.data[key].value.String
+func (store *Store) Get(key string) string {
+	store.cleanUp()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.data[key].value.String
 }
 
-func (d *Store) Set(key, value string, px int64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (store *Store) Set(key, value string, px int64) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	switch px {
 	case 0:
-		d.data[key] = storeData{
+		store.data[key] = storeData{
 			value: item{String: value},
 			dataType: "string",
 			ttl: 0,
 		}
 	default:
-		d.data[key] = storeData{
+		store.data[key] = storeData{
 			value: item{String: value},
 			dataType: "string",
 			ttl: time.Now().UnixMilli() + px,
@@ -66,33 +69,60 @@ func (d *Store) Set(key, value string, px int64) {
 	}
 }
 
-func (d *Store) Del(key string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.data, key)
+func (store *Store) Del(key string) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	delete(store.data, key)
 }
 
-func (d *Store) Keys() []string {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (store *Store) Keys() []string {
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	keys := []string{}
-	for k := range d.data {
+	for k := range store.data {
 		keys = append(keys, k)
 	}
 	return keys
 }
 
-func (d *Store) cleanUp() {
-	for key, value := range d.data {
+func (store *Store) GetType(key string) string {
+	store.cleanUp()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.data[key].dataType
+}
+
+func (store *Store) SetStream(key string) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.data[key] = storeData{
+		value: item{Stream: make(map[string]storeData)},
+		dataType: "stream",
+		ttl: 0,
+	}
+}
+
+func (store *Store) AddToStream(streamKey, streamId, key, value string) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.data[streamKey].value.Stream[streamId] = storeData{
+		value: item{String: value},
+		dataType: "string",
+		ttl: 0,
+	}
+}
+
+func (store *Store) cleanUp() {
+	for key, value := range store.data {
 		if value.ttl > 0 && value.ttl < time.Now().UnixMilli() {
-			d.Del(key)
+			store.Del(key)
 		}
 	}
 }
 
-func (d *Store) cleanUpRoutine() {
+func (store *Store) cleanUpRoutine() {
 	for {
 		time.Sleep(120 * time.Second)
-		d.cleanUp()
+		store.cleanUp()
 	}
 }
