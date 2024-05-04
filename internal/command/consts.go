@@ -14,4 +14,5 @@ const (
 	TYPE = "type"
 	XADD = "xadd"
 	XRANGE = "xrange"
+	XREAD = "xread"
 )

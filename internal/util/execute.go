@@ -49,6 +49,13 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			return
 		}
 		conn.Write([]byte(resp.ToStreamRESPArray(stream)))
+	case command.XREAD:
+		stream := cache.GetStream(cmd.GetArg(1), cmd.GetArg(2), "+")
+		if len(stream) == 0 {
+			conn.Write([]byte(resp.ToRESPNullArray()))
+			return
+		}
+		conn.Write(([]byte(resp.ToRESPStreamWithName(cmd.GetArg(1), stream))))
 	case command.KEYS:
 		keys := cache.Keys()
 		fmt.Println(keys)
