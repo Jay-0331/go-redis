@@ -13,4 +13,5 @@ const (
 	KEYS = "keys"
 	TYPE = "type"
 	XADD = "xadd"
+	XRANGE = "xrange"
 )

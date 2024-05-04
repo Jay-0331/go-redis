@@ -1,6 +1,10 @@
 package resp
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/codecrafters-io/redis-starter-go/internal/cache"
+)
 
 const (
 	CLRF = "\r\n"
@@ -38,3 +42,12 @@ func ToRESPNullArray() string {
 	return "*-1" + CLRF
 }
 
+func ToStreamRESPArray(arr []cache.StreamType) string {
+	resp := "*" + strconv.Itoa(len(arr)) + CLRF
+	for _, stream := range arr {
+		resp += "*" + "2" + CLRF
+		resp += ToRESPBulkString(stream.Id)
+		resp += ToRESPArray(stream.Data)
+	}
+	return resp
+}

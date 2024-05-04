@@ -16,6 +16,7 @@ type Cache interface {
 	GetType(key string) string
 	SetStream(key string)
 	AddToStream(streamKey, streamId string, data []string) (string, error)
+	GetStream(key, start, end string) []StreamType
 }
 
 type Store struct {
@@ -23,14 +24,14 @@ type Store struct {
 	data map[string]storeData
 }
 
-type streamType struct {
+type StreamType struct {
 	Id string
 	Data []string
 }
 
 type item struct {
 	String string
-	Stream []streamType
+	Stream []StreamType
 }
 
 type storeData struct {
@@ -93,6 +94,21 @@ func (store *Store) Keys() []string {
 	return keys
 }
 
+func (store *Store) cleanUp() {
+	for key, value := range store.data {
+		if value.ttl > 0 && value.ttl < time.Now().UnixMilli() {
+			store.Del(key)
+		}
+	}
+}
+
+func (store *Store) cleanUpRoutine() {
+	for {
+		time.Sleep(120 * time.Second)
+		store.cleanUp()
+	}
+}
+
 func (store *Store) GetType(key string) string {
 	store.cleanUp()
 	store.mu.Lock()
@@ -107,7 +123,7 @@ func (store *Store) SetStream(key string) {
 		return
 	}
 	store.data[key] = storeData{
-		value: item{Stream: []streamType{}},
+		value: item{Stream: []StreamType{}},
 		dataType: "stream",
 		ttl: 0,
 	}
@@ -146,7 +162,7 @@ func (store *Store) AddToStream(streamKey, streamId string, data []string) (stri
 			return "", fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
 		}
 	}
-	streamData.value.Stream = append(streamData.value.Stream, streamType{
+	streamData.value.Stream = append(streamData.value.Stream, StreamType{
 		Id:   streamId,
 		Data: data,
 	})
@@ -154,17 +170,26 @@ func (store *Store) AddToStream(streamKey, streamId string, data []string) (stri
 	return streamId, nil
 }
 
-func (store *Store) cleanUp() {
-	for key, value := range store.data {
-		if value.ttl > 0 && value.ttl < time.Now().UnixMilli() {
-			store.Del(key)
+func (store *Store) GetStream(key, start, end string) []StreamType {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	streamData := store.data[key]
+	if !strings.Contains(start, "-") {
+		start = start + "-0"
+	}
+	if !strings.Contains(end, "-") {
+		end = end + "-0"
+	}
+	startIdx := 0
+	endIdx := len(streamData.value.Stream)
+	for idx, stream := range streamData.value.Stream {
+		fmt.Println(stream.Id)
+		if stream.Id == start {
+			startIdx = idx
+		}
+		if stream.Id == end {
+			endIdx = idx
 		}
 	}
-}
-
-func (store *Store) cleanUpRoutine() {
-	for {
-		time.Sleep(120 * time.Second)
-		store.cleanUp()
-	}
+	return streamData.value.Stream[startIdx:endIdx+1]
 }
