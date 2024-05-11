@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/cache"
@@ -52,24 +51,49 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		}
 		conn.Write([]byte(resp.ToStreamRESPArray(stream)))
 	case command.XREAD:
-		i := 0
-		for _, arg := range cmd.GetArgs() {
-			if strings.Contains(arg, "-") {
-				break
+		switch cmd.GetArg(0) {
+		case "streams":
+			streamMap := GetStreamMap(cmd.GetArgs()[1:], c)
+			if len(streamMap) == 0 {
+				conn.Write([]byte(resp.ToRESPNullArray()))
+				return
 			}
-			i++
+			resp := resp.ToRESPStreamWithName(streamMap)
+			conn.Write(([]byte(resp)))
+		case "block":
+			timeout, _ := strconv.Atoi(cmd.GetArg(1))
+			go func(timeout int) {
+				prevStreamMap := GetStreamMap(cmd.GetArgs()[3:], c)
+				time.Sleep(time.Duration(timeout) * time.Millisecond)
+				loop: for {
+					streamMap := GetStreamMap(cmd.GetArgs()[3:], c)
+					if len(streamMap) == 0 {
+						conn.Write([]byte(resp.ToRESPNullArray()))
+						return
+					}
+					for key, stream := range streamMap {
+						streamMap[key] = stream[len(prevStreamMap[key]):]
+					}
+					completed := 0
+					for _, stream := range streamMap {
+						if timeout == 0 && len(stream) == 0 {
+							completed++
+							continue
+						} 
+						if len(stream) == 0 {
+							conn.Write([]byte(resp.ToRESPNullArray()))
+							break loop
+						} 
+					}
+					if completed == len(streamMap) {
+						continue loop
+					}
+					resp := resp.ToRESPStreamWithName(streamMap)
+					conn.Write(([]byte(resp)))
+					break loop
+				}
+			}(timeout)
 		}
-		streamMap := make(map[string][]cache.StreamType)
-		for j := 1; j < i; j++ {
-			stream := c.GetStream(cmd.GetArg(j), cmd.GetArg(i + j - 1), "+")
-			streamMap[cmd.GetArg(j)] = stream
-		}
-		if len(streamMap) == 0 {
-			conn.Write([]byte(resp.ToRESPNullArray()))
-			return
-		}
-		resp := resp.ToRESPStreamWithName(streamMap)
-		conn.Write(([]byte(resp)))
 	case command.KEYS:
 		keys := c.Keys()
 		fmt.Println(keys)
@@ -154,7 +178,6 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 				}
 				go propagate(redis, *ackCmd)
 			}
-
 			numAck := 0
 			if needAck != 0 {
 			for numAck < needAck {
@@ -215,6 +238,15 @@ func ExecuteReplica(redis redis.Node, cmd command.Command) {
 		}
 		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
 		return
+	case command.XADD:
+		go propagate(redis, cmd)
+		c.SetStream(cmd.GetArg(0))
+		_, err := c.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
+		if err != nil {
+			return
+		}
+		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
+		return
 	}
 }
 
@@ -222,4 +254,16 @@ func propagate(redis redis.Node, cmd command.Command) {
 	for _, slave := range redis.GetSlaveConn() {
 		slave.Write([]byte(resp.ToRESPArray(cmd.CmdToSlice())))
 	}
+}
+
+func GetStreamMap(streamArgs []string, c cache.Cache) map[string][]cache.StreamType {
+	m := len(streamArgs) / 2
+	streamMap := make(map[string][]cache.StreamType)
+	for i := 0; i < m; i++ {
+		key := streamArgs[i]
+		start := streamArgs[i + m]
+		stream := c.GetStream(key, start, "+")
+		streamMap[key] = stream
+	}
+	return streamMap
 }
