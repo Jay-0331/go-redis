@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/cache"
@@ -14,6 +15,7 @@ import (
 )
 
 var ackChan = make(chan bool, 1)
+var pubSub = NewPubSub()
 
 func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 	c := redis.GetCache()
@@ -43,6 +45,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			return
 		}
 		conn.Write([]byte(resp.ToRESPSimpleString(id)))
+		pubSub.Publish("xread", cmd.GetArg(0) + "_" + id)
 	case command.XRANGE:
 		stream := c.GetStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArg(2))
 		if len(stream) == 0 {
@@ -62,37 +65,83 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			conn.Write(([]byte(resp)))
 		case "block":
 			timeout, _ := strconv.Atoi(cmd.GetArg(1))
-			go func(timeout int) {
-				prevStreamMap := GetStreamMap(cmd.GetArgs()[3:], c)
-				time.Sleep(time.Duration(timeout) * time.Millisecond)
-				loop: for {
-					streamMap := GetStreamMap(cmd.GetArgs()[3:], c)
-					if len(streamMap) == 0 {
-						conn.Write([]byte(resp.ToRESPNullArray()))
-						return
-					}
-					for key, stream := range streamMap {
-						streamMap[key] = stream[len(prevStreamMap[key]):]
-					}
-					completed := 0
-					for _, stream := range streamMap {
-						if timeout == 0 && len(stream) == 0 {
-							completed++
-							continue
-						} 
+			streamMap := make(map[string][]cache.StreamType)
+			needs := len(cmd.GetArgs()[3:]) / 2
+			go func(timeout int, cache cache.Cache, streamMap map[string][]cache.StreamType, needs int) {
+				xread_chan := pubSub.Subscribe("xread")
+				defer pubSub.Unsubscribe("xread")
+				for	{
+					if timeout == 0 {
+						message := <- xread_chan
+						parts := strings.Split(message.Message, "_")
+						key := parts[0]
+						id := parts[1]
+						stream := cache.GetStream(key, id, "+")
 						if len(stream) == 0 {
+							continue
+						}
+						streamMap[key] = stream
+						if len(streamMap) == needs {
+							resp := resp.ToRESPStreamWithName(streamMap)
+							conn.Write(([]byte(resp)))
+							break
+						}
+					} else {
+						select {
+						case <- time.After(time.Duration(timeout) * time.Millisecond):
 							conn.Write([]byte(resp.ToRESPNullArray()))
-							break loop
-						} 
+						case message := <- xread_chan:
+							parts := strings.Split(message.Message, "_")
+							key := parts[0]
+							id := parts[1]
+							stream := cache.GetStream(key, id, "+")
+							if len(stream) == 0 {
+								continue
+							}
+							streamMap[key] = stream
+						}
+						if len(streamMap) == needs {
+							resp := resp.ToRESPStreamWithName(streamMap)
+							conn.Write(([]byte(resp)))
+							break
+						} else if timeout == 0 {
+							continue
+						}
 					}
-					if completed == len(streamMap) {
-						continue loop
-					}
-					resp := resp.ToRESPStreamWithName(streamMap)
-					conn.Write(([]byte(resp)))
-					break loop
 				}
-			}(timeout)
+				conn.Write([]byte(resp.ToRESPNullArray()))
+			}(timeout, c, streamMap, needs)
+			// go func(timeout int) {
+			// 	prevStreamMap := GetStreamMap(cmd.GetArgs()[3:], c)
+			// 	time.Sleep(time.Duration(timeout) * time.Millisecond)
+			// 	loop: for {
+			// 		streamMap := GetStreamMap(cmd.GetArgs()[3:], c)
+			// 		if len(streamMap) == 0 {
+			// 			conn.Write([]byte(resp.ToRESPNullArray()))
+			// 			return
+			// 		}
+			// 		for key, stream := range streamMap {
+			// 			streamMap[key] = stream[len(prevStreamMap[key]):]
+			// 		}
+			// 		completed := 0
+			// 		for _, stream := range streamMap {
+			// 			if timeout == 0 && len(stream) == 0 {
+			// 				completed++
+			// 				continue
+			// 			} 
+			// 			if len(stream) == 0 {
+			// 				conn.Write([]byte(resp.ToRESPNullArray()))
+			// 				break loop
+			// 			} 
+			// 		}
+			// 		if completed == len(streamMap) {
+			// 			continue loop
+			// 		}
+			// 		resp := resp.ToRESPStreamWithName(streamMap)
+			// 		conn.Write(([]byte(resp)))
+			// 		break loop
+			// 	}
+			// }(timeout)
 		}
 	case command.KEYS:
 		keys := c.Keys()
