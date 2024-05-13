@@ -67,6 +67,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			timeout, _ := strconv.Atoi(cmd.GetArg(1))
 			streamMap := make(map[string][]cache.StreamType)
 			agrsSet := map[string]bool{}
+			needs := len(cmd.GetArgs()[3:]) / 2
 			for _, arg := range cmd.GetArgs()[3: needs + 4] {
 				agrsSet[arg] = true
 			}
