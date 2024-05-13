@@ -66,7 +66,6 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		case "block":
 			timeout, _ := strconv.Atoi(cmd.GetArg(1))
 			streamMap := make(map[string][]cache.StreamType)
-			needs := len(cmd.GetArgs()[3:]) / 2
 			agrsSet := map[string]bool{}
 			for _, arg := range cmd.GetArgs()[3: needs + 4] {
 				agrsSet[arg] = true
@@ -87,7 +86,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 						if _, ok := args[key]; ok {
 							streamMap[key] = stream
 						}
-						if len(streamMap) == needs {
+						if len(streamMap) == len(args) {
 							resp := resp.ToRESPStreamWithName(streamMap)
 							conn.Write(([]byte(resp)))
 							break loop
@@ -107,7 +106,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 							if _, ok := args[key]; ok {
 								streamMap[key] = stream
 							}
-							if len(streamMap) == needs {
+							if len(streamMap) == len(args) {
 								resp := resp.ToRESPStreamWithName(streamMap)
 								conn.Write(([]byte(resp)))
 								break loop
