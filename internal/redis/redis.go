@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/cache"
 	"github.com/codecrafters-io/redis-starter-go/internal/resp"
@@ -67,7 +68,7 @@ type NodeType struct {
 
 func NewNode() Node {
 	port := flag.String("port", "6379", "Port to bind to")
-	masterHost := flag.String("replicaof", "", "Host of master Node")
+	host := flag.String("replicaof", "", "Host of master Node")
 	dir := flag.String("dir", "", "Directory to store RDB file")
 	fileName := flag.String("dbfilename", "", "Name of RDB file")
 	flag.Parse()
@@ -75,18 +76,27 @@ func NewNode() Node {
 		fileName: *fileName,
 		dir: *dir,
 	}
-	masterPort := flag.Arg(0)
-	addr := "0.0.0.0:" + *port
+	masterHost := ""
+	masterPort := ""
+	master := strings.Split(*host, " ")
+	if len(master) == 2 {
+		masterHost = master[0]
+		masterPort = master[1]
+	} else if len(master) == 1 {
+		masterHost = master[0]
+		masterPort = flag.Arg(0)
+	}
+	addr := net.IPv4(0, 0, 0, 0).String() + ":" + *port
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		fmt.Println("Failed to bind to port: ", err.Error())
 		return nil
 	}
 	node := Node(nil)
-	if *masterHost != "" {
-		node = NewSlave(l, "0.0.0.0", *port, *masterHost, masterPort, rdbFile)	
+	if masterHost != "" {
+		node = NewSlave(l, net.IPv4(0, 0, 0, 0).String(), *port, masterHost, masterPort, rdbFile)	
 	} else {
-		node = newMaster(l, "0.0.0.0", *port, rdbFile)
+		node = newMaster(l, net.IPv4(0, 0, 0, 0).String(), *port, rdbFile)
 	}
 	if rdbFile.fileName != "" || rdbFile.dir != "" {
 		data := resp.LoadValuesFromRDBFile(rdbFile.dir + "/" + rdbFile.fileName)

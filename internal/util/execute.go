@@ -67,10 +67,14 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			timeout, _ := strconv.Atoi(cmd.GetArg(1))
 			streamMap := make(map[string][]cache.StreamType)
 			needs := len(cmd.GetArgs()[3:]) / 2
-			go func(timeout int, cache cache.Cache, streamMap map[string][]cache.StreamType, needs int) {
+			agrsSet := map[string]bool{}
+			for _, arg := range cmd.GetArgs()[3: needs + 4] {
+				agrsSet[arg] = true
+			}
+			go func(timeout int, cache cache.Cache, streamMap map[string][]cache.StreamType, args map[string]bool) {
 				xread_chan := pubSub.Subscribe("xread")
 				defer pubSub.Unsubscribe("xread")
-				for	{
+				loop: for	{
 					if timeout == 0 {
 						message := <- xread_chan
 						parts := strings.Split(message.Message, "_")
@@ -78,13 +82,15 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 						id := parts[1]
 						stream := cache.GetStream(key, id, "+")
 						if len(stream) == 0 {
-							continue
+							continue loop
 						}
-						streamMap[key] = stream
+						if _, ok := args[key]; ok {
+							streamMap[key] = stream
+						}
 						if len(streamMap) == needs {
 							resp := resp.ToRESPStreamWithName(streamMap)
 							conn.Write(([]byte(resp)))
-							break
+							break loop
 						}
 					} else {
 						select {
@@ -96,52 +102,21 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 							id := parts[1]
 							stream := cache.GetStream(key, id, "+")
 							if len(stream) == 0 {
-								continue
+								continue loop
 							}
-							streamMap[key] = stream
-						}
-						if len(streamMap) == needs {
-							resp := resp.ToRESPStreamWithName(streamMap)
-							conn.Write(([]byte(resp)))
-							break
-						} else if timeout == 0 {
-							continue
+							if _, ok := args[key]; ok {
+								streamMap[key] = stream
+							}
+							if len(streamMap) == needs {
+								resp := resp.ToRESPStreamWithName(streamMap)
+								conn.Write(([]byte(resp)))
+								break loop
+							}
 						}
 					}
 				}
 				conn.Write([]byte(resp.ToRESPNullArray()))
-			}(timeout, c, streamMap, needs)
-			// go func(timeout int) {
-			// 	prevStreamMap := GetStreamMap(cmd.GetArgs()[3:], c)
-			// 	time.Sleep(time.Duration(timeout) * time.Millisecond)
-			// 	loop: for {
-			// 		streamMap := GetStreamMap(cmd.GetArgs()[3:], c)
-			// 		if len(streamMap) == 0 {
-			// 			conn.Write([]byte(resp.ToRESPNullArray()))
-			// 			return
-			// 		}
-			// 		for key, stream := range streamMap {
-			// 			streamMap[key] = stream[len(prevStreamMap[key]):]
-			// 		}
-			// 		completed := 0
-			// 		for _, stream := range streamMap {
-			// 			if timeout == 0 && len(stream) == 0 {
-			// 				completed++
-			// 				continue
-			// 			} 
-			// 			if len(stream) == 0 {
-			// 				conn.Write([]byte(resp.ToRESPNullArray()))
-			// 				break loop
-			// 			} 
-			// 		}
-			// 		if completed == len(streamMap) {
-			// 			continue loop
-			// 		}
-			// 		resp := resp.ToRESPStreamWithName(streamMap)
-			// 		conn.Write(([]byte(resp)))
-			// 		break loop
-			// 	}
-			// }(timeout)
+			}(timeout, c, streamMap, agrsSet)
 		}
 	case command.KEYS:
 		keys := c.Keys()
