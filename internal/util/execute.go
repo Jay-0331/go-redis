@@ -68,7 +68,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 			streamMap := make(map[string][]cache.StreamType)
 			agrsSet := map[string]bool{}
 			needs := len(cmd.GetArgs()[3:]) / 2
-			for _, arg := range cmd.GetArgs()[3: needs + 4] {
+			for _, arg := range cmd.GetArgs()[3: needs + 3] {
 				agrsSet[arg] = true
 			}
 			go func(timeout int, cache cache.Cache, streamMap map[string][]cache.StreamType, args map[string]bool) {
@@ -97,6 +97,7 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 						case <- time.After(time.Duration(timeout) * time.Millisecond):
 							conn.Write([]byte(resp.ToRESPNullArray()))
 						case message := <- xread_chan:
+							fmt.Println(message)
 							parts := strings.Split(message.Message, "_")
 							key := parts[0]
 							id := parts[1]
