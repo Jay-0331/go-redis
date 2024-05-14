@@ -66,3 +66,7 @@ func ToRESPStreamWithName(streamMap map[string][]cache.StreamType) string {
 	}
 	return resp
 }
+
+func ToRESPBulkStringFile(str string) string {
+	return "$" + strconv.Itoa(len(str)) + CLRF + str
+}

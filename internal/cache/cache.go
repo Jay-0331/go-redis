@@ -9,7 +9,7 @@ import (
 )
 
 type Cache interface {
-	Get(key string) string
+	Get(key string) (string, error)
 	Set(key, value string, px int64)
 	Del(key string)
 	Keys() []string
@@ -52,11 +52,14 @@ func NewCache() Cache {
 	return s
 }
 
-func (store *Store) Get(key string) string {
+func (store *Store) Get(key string) (string, error) {
 	store.cleanUp()
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	return store.data[key].value.String
+	if _, ok := store.data[key]; !ok {
+		return "", fmt.Errorf("Key does not exist")
+	}
+	return store.data[key].value.String, nil
 }
 
 func (store *Store) Set(key, value string, px int64) {
@@ -113,6 +116,9 @@ func (store *Store) GetType(key string) string {
 	store.cleanUp()
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if _, ok := store.data[key]; !ok {
+		return "none"
+	}
 	return store.data[key].dataType
 }
 
