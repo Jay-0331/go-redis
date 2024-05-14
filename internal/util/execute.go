@@ -2,7 +2,6 @@ package util
 
 import (
 	"net"
-	"strconv"
 
 	"github.com/codecrafters-io/redis-starter-go/internal/command"
 	"github.com/codecrafters-io/redis-starter-go/internal/redis"
@@ -36,16 +35,18 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 	case command.KEYS:
 		conn.Write([]byte(handleKeys(c)))
 	case command.SET:
-		res := handleSet(cmd, c)
+		res := handleSet(cmd, c, redis)
 		if redis.IsSlave() {
 			redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
 		} else {
 			conn.Write([]byte(res))
 		}
+	case command.DEL:
+		conn.Write([]byte(handleDel(cmd, c)))
 	case command.GET:
 		conn.Write([]byte(handleGet(cmd, c)))
 	case command.INFO:
-		conn.Write([]byte(handleInfo(cmd, c, redis)))
+		conn.Write([]byte(handleInfo(redis)))
 	case command.REPLCONF:
 		res := handleReplConf(cmd, redis, conn)
 		if redis.IsMaster() && res != "" {
@@ -63,45 +64,5 @@ func Execute(redis redis.Node, conn net.Conn, cmd command.Command) {
 		conn.Write([]byte(handleConfig(cmd, redis)))
 	default:
 		conn.Write([]byte(resp.ToRESPError("Invalid Command")))
-	}
-}
-
-func ExecuteReplica(redis redis.Node, cmd command.Command) {
-	c := redis.GetCache()
-	switch cmd.GetName() {
-	case command.PING:
-		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
-		return
-	case command.SET:
-		propagate(redis, cmd)
-		if len(cmd.GetArgs()) > 2 && cmd.GetArg(2) == "px" {
-			px, err := strconv.Atoi(cmd.GetArg(3))
-			if err != nil {
-				return
-			}
-			c.Set(cmd.GetArg(0), cmd.GetArg(1), int64(px))
-		} else if len(cmd.GetArgs()) == 3 {
-			return
-		} else {
-			c.Set(cmd.GetArg(0), cmd.GetArg(1), 0)
-		}
-		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
-		return
-	case command.REPLCONF:
-		if cmd.GetArg(0) == "getack" {
-			resp := resp.ToRESPArray([]string{"REPLCONF", "ACK", strconv.Itoa(redis.GetOffset())})
-			redis.GetMasterConn().Write([]byte(resp))
-		}
-		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
-		return
-	case command.XADD:
-		go propagate(redis, cmd)
-		c.SetStream(cmd.GetArg(0))
-		_, err := c.AddToStream(cmd.GetArg(0), cmd.GetArg(1), cmd.GetArgs()[2:])
-		if err != nil {
-			return
-		}
-		redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
-		return
 	}
 }

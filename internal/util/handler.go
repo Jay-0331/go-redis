@@ -16,7 +16,8 @@ import (
 var ackChan = make(chan bool, 1)
 var pubSub = NewPubSub()
 
-func handleSet(cmd command.Command, c cache.Cache) string {
+func handleSet(cmd command.Command, c cache.Cache, redis redis.Node) string {
+	go propagate(redis, cmd)
 	if len(cmd.GetArgs()) > 2 && cmd.GetArg(2) == "px" {
 		px, err := strconv.Atoi(cmd.GetArg(3))
 		if err != nil {
@@ -34,7 +35,7 @@ func handleSet(cmd command.Command, c cache.Cache) string {
 func handleGet(cmd command.Command, c cache.Cache) string {
 	value, err := c.Get(cmd.GetArg(0))
 	if err != nil {
-		return resp.ToRESPError("Key does not exist")
+		return resp.ToRESPNullBulkString()
 	}
 	return resp.ToRESPBulkString(value)
 }
@@ -49,14 +50,14 @@ func handleDel(cmd command.Command, c cache.Cache) string {
 	return resp.ToRESPSimpleString("OK")
 }
 
-func handleInfo(cmd command.Command, c cache.Cache, redis redis.Node) string {
+func handleInfo(redis redis.Node) string {
 	role := "role:" + string(redis.GetRole())
-			if redis.IsMaster() {
-				master_id := "master_replid:" + redis.GetReplId()
-				master_offset := "master_repl_offset:" + strconv.Itoa(redis.GetRepOffset())
-				return resp.ToRESPBulkString(role + "\n" + master_id + "\n" + master_offset)
-			} 
-			return resp.ToRESPBulkString(role)
+	if redis.IsMaster() {
+		master_id := "master_replid:" + redis.GetReplId()
+		master_offset := "master_repl_offset:" + strconv.Itoa(redis.GetRepOffset())
+		return resp.ToRESPBulkString(role + "\n" + master_id + "\n" + master_offset)
+	} 
+	return resp.ToRESPBulkString(role)
 }
 
 func handleReplConf(cmd command.Command, redis redis.Node, conn net.Conn) string {
@@ -73,8 +74,8 @@ func handleReplConf(cmd command.Command, redis redis.Node, conn net.Conn) string
 				redis.GetMasterConn().Write([]byte(resp))
 			}
 			redis.UpdateOffset(len(resp.ToRESPArray(cmd.CmdToSlice())))
-			return ""
 		}
+		return ""
 	} else if cmd.GetArg(0) == "ack" {
 		ackChan <- true
 		return ""
@@ -90,7 +91,7 @@ func handlePSYNC(cmd command.Command, redis redis.Node, conn net.Conn) string {
 		if err != nil {
 			return resp.ToRESPError(err.Error())
 		}
-		return string(emptyRDB)
+		return resp.ToRESPBulkStringFile(string(emptyRDB))
 	}
 	return resp.ToRESPError("Invalid Command")
 }

@@ -101,7 +101,6 @@ func NewNode() Node {
 	if rdbFile.fileName != "" || rdbFile.dir != "" {
 		data := resp.LoadValuesFromRDBFile(rdbFile.dir + "/" + rdbFile.fileName)
 		cache := node.GetCache()
-		fmt.Println(data)
 		for _, value := range data {
 			cache.Set(value.Key, value.Value, value.ExpireTime)
 		}

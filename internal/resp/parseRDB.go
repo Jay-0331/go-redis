@@ -2,7 +2,6 @@ package resp
 
 import (
 	"encoding/binary"
-	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -37,7 +36,6 @@ func LoadValuesFromRDBFile(filePath string) []RDBData {
 	}
 	rdb.OpenRDBFile(filePath)
 	if !rdb.VerifyRDBFile() {
-		fmt.Print("Invalid RDB file")
 		return nil
 	}
 	main:
@@ -47,13 +45,10 @@ func LoadValuesFromRDBFile(filePath string) []RDBData {
 		case OP_EOF:
 			break main
 		case OP_SELECTDB:
-			fmt.Println("Select DB")
 			rdb.DatabaseSelect()
 		case OP_RESIZEDB:
-			fmt.Println("Resize DB")
 			rdb.ResizeDB()
 		case OP_AUX:
-			fmt.Println("Aux")
 			rdb.Aux()
 		}
 	}
@@ -91,7 +86,6 @@ func (rdb *RDB) VerifyRDBFile() bool {
 func (rdb *RDB) DatabaseSelect() {
 	selectedDB := rdb.ReadLengthEncoded()
 	rdb.selectedDB = selectedDB
-	fmt.Println(rdb.selectedDB)
 }
 
 func (rdb *RDB) ReadOpCode() byte {
@@ -129,7 +123,6 @@ func (rdb *RDB) ReadKeyVal() {
 	}
 	key := rdb.ReadRDBString()
 	value := rdb.ReadRDBString()
-	fmt.Println(key, value, expireTime)
 	rdb.data = append(rdb.data, RDBData{key, value, expireTime})
 }
 
@@ -141,7 +134,6 @@ func (rdb *RDB) DiscardKeyValue() {
 func (rdb *RDB) ResizeDB() {
 	hashTableSize := rdb.ReadLengthEncoded()
 	expireHashTableSize := rdb.ReadLengthEncoded()
-	fmt.Println(hashTableSize, expireHashTableSize)
 	rdb.hashTableSize = hashTableSize
 	rdb.expireHashTableSize = expireHashTableSize
 	for i := 0; i < hashTableSize; i++ {
@@ -151,9 +143,8 @@ func (rdb *RDB) ResizeDB() {
 
 
 func (rdb *RDB) Aux() {
-	key := rdb.ReadRDBString()
-	value := rdb.ReadRDBString()
-	fmt.Println(key, value)
+	rdb.ReadRDBString()
+	rdb.ReadRDBString()
 }
 
 func (rdb *RDB) CloseRDBFile() {
@@ -164,7 +155,6 @@ func (rdb *RDB) ReadRDBString() string {
 	length := rdb.ReadLengthEncoded()
 	str := make([]byte, length)
 	rdb.file.Read(str)
-	fmt.Println(string(str))
 	return string(str)
 }
 
@@ -183,7 +173,6 @@ func (rdb *RDB) ReadLengthEncoded() int {
 		rdb.file.Read(rest)
 		return int(binary.LittleEndian.Uint32(rest))
 	default:
-		fmt.Println(lengthByte)
 		return int(binary.LittleEndian.Uint16([]byte{lengthByte[0] & 0b00111111, 0}))
 	}
 }

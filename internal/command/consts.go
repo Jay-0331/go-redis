@@ -5,6 +5,7 @@ const (
 	ECHO = "echo"
 	SET = "set"
 	GET = "get"
+	DEL = "del"
 	INFO = "info"
 	REPLCONF = "replconf"
 	PSYNC = "psync"
